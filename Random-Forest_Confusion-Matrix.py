@@ -1,165 +1,69 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Jun  2 17:21:43 2023
-
-@author: Felipe Leite
-"""
-
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier as RFC
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import (
+    accuracy_score, classification_report,
+    confusion_matrix, ConfusionMatrixDisplay
+)
 import matplotlib.pyplot as plt
-import seaborn as sns
 
-df= pd.read_csv("./heart.csv")
+# --- Load ---
+df = pd.read_csv("./heart.csv")
 
-# # # # Data Preprocession
+# --- Preprocessing ---
+# Drop columns with >50% missing
+df.drop(columns=df.columns[df.isna().mean() > 0.5], inplace=True)
 
-### ************** Missing Data
-# Check for number of missing data 
-missingData = df.isna()
-percentage = missingData.mean(axis=0) * 100
-
-# Handle missing data   
-to_drop = percentage[percentage > 50]
-df.drop(to_drop.index, axis=1, inplace=True)
-df.fillna(df.mean(), inplace=True)
-#df = pd.get_dummies(df, columns=["city"])
-
-### ************** Outliers
-# identifying outliers
-threshold = 3
-numeric_data = df.select_dtypes(include=['float64', 'int64'])
-z_scores = np.abs((numeric_data - numeric_data.mean(axis=0)) / numeric_data.std(axis=0))
-is_outlier = z_scores > threshold
-outliers = df[is_outlier.any(axis=1)]
-print("Outliers status:\n", is_outlier.sum(axis=0))
-print("Outliers:\n", outliers)
-
-# Handle outliers - Dropping outliers from the original dataset
-df.drop(outliers.index, inplace=True)
-
-
-# # # # **************  Random Forest Classifier  *************************************
-
-### ************** Model Traininf and testing
+# Separate target before outlier handling
 y = df["output"]
 x = df.drop("output", axis=1)
 
-x_train, x_test, y_train, y_test=train_test_split(x,y,test_size=0.2,random_state=42)
-x_mean = x_train.mean().copy()
+# Fill missing (mode for binary/categorical, mean for continuous)
+for col in x.columns:
+    if x[col].nunique() <= 5:
+        x[col].fillna(x[col].mode()[0], inplace=True)
+    else:
+        x[col].fillna(x[col].mean(), inplace=True)
 
-model_rf = RFC(n_estimators=5000,max_features=3,max_depth=8)
-model_rf.fit(x_train,y_train)
-y_pred = model_rf.predict(x_test)
-m_pred = model_rf.predict(x_test).copy()
-print("------------------------")    
-print("pred_model: \n", m_pred)
+# Outlier removal (features only)
+numeric = x.select_dtypes(include=["float64", "int64"])
+z = np.abs((numeric - numeric.mean()) / numeric.std())
+mask = (z <= 3).all(axis=1)
+x, y = x[mask], y[mask]
 
-model_rf.predict_proba(x_test)
+# --- Train / Test ---
+x_train, x_test, y_train, y_test = train_test_split(
+    x, y, test_size=0.2, random_state=42
+)
 
-def sigmoid(input, threshold):
-    result = (input > threshold).astype(int)
-    return result
+model = RFC(n_estimators=500, max_features="sqrt", max_depth=8, random_state=42)
+model.fit(x_train, y_train)
+y_pred = model.predict(x_test)
 
-y_pred = sigmoid(model_rf.predict(x_test),0.5)
-accuracy_score(y_test, y_pred)
+# --- Evaluation ---
+print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+print(classification_report(y_test, y_pred))
 
-print("------------------------")    
-print("y_pred: \n", y_pred)
-
-# # # # **************  Simulation  *************************************
-### ************** Feature Importance
-importance = model_rf.feature_importances_
-print("feature importance: \n", model_rf.feature_importances_)
-
-# Sort features importance in descending order
-indices = np.argsort(importance)[::-1]
-s = importance.sum()
-print("Sum")
-# Print feature ranking
-print("Feature ranking:")
-
-
-for i, idx in enumerate(indices):
-    print(f"{i + 1}. Feature {idx} ({x.columns[idx]}): {importance[idx]}")
-# Plot feature importances
-plt.figure()
-plt.bar(range(x.shape[1]), importance[indices], align="center")
-plt.xticks(range(x.shape[1]), np.array(x.columns)[indices], rotation=90)
-
-# Add text labels
-for i, v in enumerate(importance[indices]):
-    plt.text(i, v - 0.01, str(round(v, 2)), ha="center", color='white')
-
-
-plt.title("Features Importance")
-plt.ylabel("Importance")
-plt.xlabel("Features")
+# --- Confusion Matrix ---
+cm = confusion_matrix(y_test, y_pred)
+ConfusionMatrixDisplay(confusion_matrix=cm).plot(cmap="Blues")
+plt.title("Confusion Matrix")
 plt.tight_layout()
-# Create a legend
-plt.legend()
 plt.show()
 
-# Compute the mean values for each variable
-mean_values = x_test.mean()
-# Generate data and figures for each feature
-for feature_name in x_test.columns:
-    
-    predictions = [[], []]
-    column_data_types = x_test.dtypes
-    
-    if feature_name in x_test.columns:
-        range_min = np.min(x_test[feature_name])
-        range_max = np.max(x_test[feature_name])
-        
-        feature_range = np.arange(range_min, range_max + 1)
-        input_values = pd.DataFrame(np.repeat(mean_values.values.reshape(1, -1), len(feature_range), axis=0), columns=mean_values.index)
-        input_values[feature_name] = feature_range
-        #y_actual = y_test[x_test[feature_name].iloc]
-        prediction = model_rf.predict(input_values)
-        prediction_prob = model_rf.predict_proba(input_values)[:, 0]  # Assuming positive class is at index 1
-        #a = accuracy_score(y_test , prediction)
-        #print(f"accuracy '{feature_name}': ", a)
-        
-        
-        predictions[0] = feature_range
-        predictions[1] = prediction_prob
-        
-        plt.plot(predictions[0], predictions[1])
-        # Perform linear regression
-        slope, intercept = np.polyfit(predictions[0], predictions[1], 1)
-        regression_eq = f'y = {slope:.2f}x + {intercept:.2f}'
-        plt.plot(predictions[0], slope * predictions[0] + intercept, color='green')
-        plt.xlabel('Feature Random Samples')
-        plt.ylabel('Predicted Heart Attack Probability')
-        plt.title(f'Prediction based on the changes of: {feature_name}')
-        plt.legend()
-        plt.show()
-        
-    else:
-        print(f"Column '{feature_name}' not found in x_train.")
-        
-    #input_values.index = x_train.index
-    predictions[0] = input_values[feature_name].copy()
-    
-    # Check the values and data types in input_values[feature_name]
-    print("input_values[feature_name] values:", input_values[feature_name].values)
-    print("input_values[feature_name] data type:", input_values[feature_name].dtype)
-     
-    # Perform the prediction using model_rf
-    prediction = model_rf.predict(input_values)
-    prediction_prob = model_rf.predict_proba(input_values)
-   
-    # Get the classes in the classifier
-    classes = model_rf.classes_
-    # Check the index of the positive class (e.g., heart attack = 1)
-    positive_class_index = np.where(classes == 1)[0][0]
-    # Get the probabilities for the positive class
-    positive_class_probabilities = prediction_prob[:, positive_class_index]
-    prediction_prob = model_rf.predict_proba(input_values)[:,positive_class_index]
-    
-    print("prediction:", prediction)
-    print("prediction_prob:", prediction_prob)
+# --- Feature Importance ---
+importances = pd.Series(model.feature_importances_, index=x.columns)
+importances.sort_values(ascending=True).plot(kind="barh")
+plt.xlabel("Importance")
+plt.title("Feature Importances")
+plt.tight_layout()
+plt.show()
+
+# --- Partial Dependence Plots (replaces manual simulation) ---
+from sklearn.inspection import PartialDependenceDisplay
+
+fig, ax = plt.subplots(figsize=(14, 8))
+PartialDependenceDisplay.from_estimator(model, x_test, features=range(x.shape[1]), ax=ax)
+plt.tight_layout()
+plt.show()
