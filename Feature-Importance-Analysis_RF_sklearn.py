@@ -1,36 +1,36 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Jun  2 17:21:43 2023
+"""Feature importance analysis using Random Forest on heart disease data."""
 
-@author: Felipe Leite
-"""
-
-from pandas import read_csv
-df=read_csv("C:/Users/Felipe Leite/OneDrive/Área de Trabalho/Master UCW/Fourth Term/BUSI 652 - Predictive Analysis/2nd group assignment/dataset_true/dataset_true/heart.csv")
-
-y=df["output"]
-x=df.drop("output", axis=1)
-
+import os
+import matplotlib.pyplot as plt
+import pandas as pd
 from sklearn.model_selection import train_test_split
-
-x_train, x_test, y_train, y_test=train_test_split(x,y,test_size=0.2,random_state=42)
-
-from sklearn.ensemble import RandomForestClassifier as RFR
-
-model_rf=RFR(n_estimators=5000,max_features=3,max_depth=8)
-model_rf.fit(x_train,y_train)
-y_pred=model_rf.predict(x_test)
-
-model_rf.predict_proba(x_test)
-
-y_pred=(model_rf.predict(x_test)>0.5).astype("int32")
+from sklearn.ensemble import RandomForestClassifier as RFC
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-accuracy_score(y_test, y_pred)
 
-print(y_pred)
+# Load data
+df = pd.read_csv(os.path.join("data", "heart.csv"))
+y = df["output"]
+x = df.drop("output", axis=1)
 
-model_rf.feature_importances_
+# Split
+x_train, x_test, y_train, y_test = train_test_split(
+    x, y, test_size=0.2, random_state=42
+)
 
+# Train
+model_rf = RFC(n_estimators=500, max_features="sqrt", max_depth=8, random_state=42)
+model_rf.fit(x_train, y_train)
+
+# Evaluate
+y_pred = model_rf.predict(x_test)
+print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
 print(classification_report(y_test, y_pred))
 
-#For Random Forest, we can use 1,2,3,4... as dummy variables
+# Feature importance
+importances = pd.Series(model_rf.feature_importances_, index=x.columns)
+importances.sort_values(ascending=True).plot(kind="barh", figsize=(8, 6))
+plt.xlabel("Importance")
+plt.title("Random Forest Feature Importances")
+plt.tight_layout()
+plt.show()
